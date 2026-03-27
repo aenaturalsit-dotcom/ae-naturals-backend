@@ -2,6 +2,7 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { ProfileService } from './profile.service';
 import { AuthGuard } from '@nestjs/passport';
+import { CurrentUser } from 'src/decorators/current-user.decorator';
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('profile')
@@ -15,8 +16,8 @@ export class ProfileController {
   }
 
   @Patch('users/update')
-  updateProfile(@Request() req, @Body() data: any) {
-    return this.profileService.updateProfile(req.user.sub, data);
+  updateProfile(@CurrentUser('userId') userId: string, @Body() data: any) {
+    return this.profileService.updateProfile(userId, data);
   }
 
   // Addresses
