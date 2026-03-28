@@ -305,6 +305,12 @@ export class ProductsService {
         category: true,
       },
     });
+    // 🧹 CACHE INVALIDATION
+  // 1. Remove the specific product cache so the next 'getProductBySlug' fetches fresh data.
+  await this.cacheManager.del(`product:${updated.slug}`);
+  
+  // 2. Invalidate the store catalog cache so list views are updated.
+  await this.invalidateCatalogCache(updated.storeId);
 
     this.logger.log(`✅ Updated product`);
     return updated;
