@@ -341,3 +341,15 @@ model APlusContent {
 
   @@index([productId])
 }
+
+model FeatureHighlight {
+  id        String   @id @default(cuid())
+  title     String
+  icon      String // Stores Lucide icon name (e.g., "Truck", "ThermometerSnowflake") or URL
+  order     Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, order]) // Optimized for frontend read queries
+}

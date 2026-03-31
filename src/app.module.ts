@@ -31,6 +31,9 @@ import { ProvidersModule } from './providers/providers.module';
 import { ProvidersController } from './admin/providers.controller';
 import { EncryptionModule } from './common/security/encryption.module';
 import { ProfileModule } from './profile/profile.module';
+import { FeaturesModule } from './features/features.module';
+import { FeaturesController } from './features/features.controller';
+import { AdminFeaturesController } from './admin/features/features.controller';
 
 @Module({
   imports: [
@@ -64,7 +67,9 @@ import { ProfileModule } from './profile/profile.module';
     CartModule,
     ProvidersModule,
     EncryptionModule,
-    ProfileModule
+    ProfileModule,
+    FeaturesModule,
+    
   ],
   controllers: [
     HealthController,
@@ -76,6 +81,7 @@ import { ProfileModule } from './profile/profile.module';
     CategoriesController,
     AuthController,
     ProvidersController,
+    AdminFeaturesController
   ],
   providers: [
     PrismaHealthIndicator,

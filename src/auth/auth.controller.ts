@@ -46,7 +46,6 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Unauthorized - No valid session.' })
   async getProfile(@Request() req: express.Request) {
     try {
-      console.log(`Attempting to get profile. Cookies:`, req.cookies); // Debug log for cookies
 
       const refreshToken = req.cookies?.refresh_token;
 
