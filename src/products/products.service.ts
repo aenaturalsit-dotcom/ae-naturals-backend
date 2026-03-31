@@ -118,7 +118,7 @@ export class ProductsService {
   }
 
   // ================== CREATE ==================
-  async createProduct(data: any) {
+async createProduct(data: any) {
     this.logger.log(`🆕 Creating product`);
 
     const {
@@ -127,6 +127,7 @@ export class ProductsService {
       extra,
       careInstructions = [],
       deliveryInfo = [],
+      highlightIds = [], // <-- NEW: Extract highlightIds from payload
       ...rest
     } = data || {};
 
@@ -171,6 +172,15 @@ export class ProductsService {
               stock: +v.stock || 0,
             })),
           },
+          // ✅ NEW: Connect Product to Highlights preserving the drag-and-drop order
+          ...(highlightIds && highlightIds.length > 0 && {
+            highlights: {
+              create: highlightIds.map((id: string, index: number) => ({
+                highlight: { connect: { id } },
+                order: index, // Saves the order they were selected in the UI
+              })),
+            },
+          }),
         },
         include: {
           extra: true,
@@ -178,6 +188,15 @@ export class ProductsService {
           variants: true,
           category: true,
           store: true,
+          // ✅ NEW: Return the newly mapped highlights so the UI updates properly
+          highlights: { 
+            include: {
+              highlight: true
+            },
+            orderBy: {
+              order: 'asc'
+            }
+          },
         },
       });
 
@@ -190,7 +209,7 @@ export class ProductsService {
   }
 
   // ================== UPDATE ==================
-  async updateProduct(id: string, data: any) {
+ async updateProduct(id: string, data: any) {
     this.logger.log(`✏️ Updating product: ${id}`);
 
     const {
@@ -198,6 +217,7 @@ export class ProductsService {
       attributes = [],
       variants = [],
       images = [],
+      highlightIds, // <-- NEW: Extract highlightIds
       ...rest
     } = data || {};
 
@@ -257,12 +277,31 @@ export class ProductsService {
             stock: +v.stock || 0,
           })),
         },
+        // ✅ NEW: Replace existing highlight mappings with the newly sorted array
+        ...(highlightIds !== undefined && {
+          highlights: {
+            deleteMany: {}, // Clear existing mappings
+            create: highlightIds.map((highlightId: string, index: number) => ({
+              highlight: { connect: { id: highlightId } },
+              order: index, // Preserve the order sent from the frontend
+            })),
+          },
+        }),
       },
       include: {
         extra: true,
         attributes: true,
         variants: true,
         category: true,
+        // ✅ NEW: Return the updated highlights array sorted by their order
+        highlights: {
+          include: {
+            highlight: true,
+          },
+          orderBy: {
+            order: 'asc',
+          },
+        },
       },
     });
 
@@ -323,5 +362,63 @@ export class ProductsService {
     if (defaultStore) return defaultStore.slug;
 
     throw new BadRequestException('Critical: No store mapped to this domain and no default store is configured.');
+  }
+
+  // --- PRODUCT HIGHLIGHTS LOGIC ---
+
+  // ================== GET PRODUCT HIGHLIGHTS ==================
+  // ✅ NEW: Added this method to serve the frontend component
+  async getProductHighlights(productId: string) {
+    console.log(`Fetching highlights for product ID: ${productId}`);
+    
+    const mappings = await this.prisma.productHighlight.findMany({
+      where: {
+        productId,
+        isActive: true,
+        highlight: { isActive: true }, 
+      },
+      orderBy: { order: 'asc' },
+      include: {
+        highlight: {
+          select: { id: true, title: true, icon: true, color: true},
+        },
+      },
+    });
+    console.log(`Found ${mappings.length} highlights for product ID: ${productId}`);
+
+    return mappings.map((m) => ({
+      mappingId: m.id,
+      id: m.highlight.id,
+      title: m.highlight.title,
+      icon: m.highlight.icon,
+      order: m.order,
+      color: m.highlight.color, // <-- Ensure color is included in the response
+    }));
+  }
+  
+  // For Admin Backend: Sync highlights for a product
+  async syncProductHighlights(productId: string, highlightIds: string[]) {
+    // 1. Interactive transaction to safely clear and recreate mappings
+    return this.prisma.$transaction(async (tx) => {
+      // Clear existing mappings
+      await tx.productHighlight.deleteMany({
+        where: { productId },
+      });
+
+      // Insert new mappings with sequential ordering
+      if (highlightIds && highlightIds.length > 0) {
+        const mappings = highlightIds.map((highlightId, index) => ({
+          productId,
+          highlightId,
+          order: index, // Preserves the array order from the frontend drag-and-drop
+        }));
+
+        await tx.productHighlight.createMany({
+          data: mappings,
+        });
+      }
+
+      return { success: true, count: highlightIds.length };
+    });
   }
 }

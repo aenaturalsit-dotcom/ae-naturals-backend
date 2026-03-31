@@ -1,66 +1,49 @@
-// src/features/dto/feature.dto.ts
-import { 
-  IsString, 
-  IsBoolean, 
-  IsOptional, 
-  IsInt, 
-  IsArray, 
-  ValidateNested, 
-  IsNotEmpty 
-} from 'class-validator';
+// src/admin/features/dto/feature.dto.ts
+// src/admin/features/dto/feature.dto.ts
+import { IsString, IsBoolean, IsOptional, IsInt, IsArray, ValidateNested, IsNotEmpty } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 
 export class CreateFeatureDto {
-  @ApiProperty({ 
-    description: 'The display label for the feature highlight', 
-    example: 'Same day delivery' 
-  })
+  @ApiProperty({ description: 'Display title', example: 'Same day delivery' })
   @IsString()
   @IsNotEmpty()
   title: string;
 
-  @ApiProperty({ 
-    description: 'The exact string name of the Lucide React icon to render', 
-    example: 'Truck' 
-  })
+  @ApiProperty({ description: 'Lucide icon string name', example: 'Truck' })
   @IsString()
   @IsNotEmpty()
   icon: string;
 
-  @ApiProperty({ 
-    description: 'Toggles visibility on the frontend', 
-    default: true, 
-    required: false 
-  })
+  @ApiProperty({ description: 'Hex color code', example: '#16a34a', required: false })
+  @IsString()
+  @IsOptional()
+  color?: string;
+
+  @ApiProperty({ default: true, required: false })
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
 }
 
-// Automatically generates a type where all fields from CreateFeatureDto are optional
+// Automatically makes all fields from CreateFeatureDto optional for updates
 export class UpdateFeatureDto extends PartialType(CreateFeatureDto) {}
 
-// --- Reorder Types ---
-
 class FeatureOrderDto {
-  @ApiProperty({ description: 'The UUID of the feature being moved' })
+  @ApiProperty({ description: 'The ID of the feature' })
   @IsString()
   @IsNotEmpty()
   id: string;
 
-  @ApiProperty({ description: 'The new sequential index for rendering' })
+  @ApiProperty({ description: 'The new order index' })
   @IsInt()
   order: number;
 }
 
 export class ReorderFeaturesDto {
-  @ApiProperty({ 
-    description: 'An array of features and their new order mappings',
-    type: [FeatureOrderDto] 
-  })
+  @ApiProperty({ type: [FeatureOrderDto] })
   @IsArray()
-  @ValidateNested({ each: true }) // Ensures each item in the array is validated against FeatureOrderDto
-  @Type(() => FeatureOrderDto)    // Tells class-transformer how to construct the nested objects
+  @ValidateNested({ each: true })
+  @Type(() => FeatureOrderDto)
   updates: FeatureOrderDto[];
 }

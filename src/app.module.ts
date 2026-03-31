@@ -31,10 +31,12 @@ import { ProvidersModule } from './providers/providers.module';
 import { ProvidersController } from './admin/providers.controller';
 import { EncryptionModule } from './common/security/encryption.module';
 import { ProfileModule } from './profile/profile.module';
-import { FeaturesModule } from './features/features.module';
-import { FeaturesController } from './features/features.controller';
-import { AdminFeaturesController } from './admin/features/features.controller';
 
+
+// Features / Highlights
+import { AdminFeaturesController } from './admin/features/features.controller';
+import { AdminFeaturesService } from './admin/features/features.service'; // <-- ADDED THIS IMPORT
+import { FeaturesModule } from './features/features.module';
 @Module({
   imports: [
     // 1. Configuration (Loaded first to ensure variables are available for other modules)
@@ -68,8 +70,7 @@ import { AdminFeaturesController } from './admin/features/features.controller';
     ProvidersModule,
     EncryptionModule,
     ProfileModule,
-    FeaturesModule,
-    
+    FeaturesModule
   ],
   controllers: [
     HealthController,
@@ -82,6 +83,7 @@ import { AdminFeaturesController } from './admin/features/features.controller';
     AuthController,
     ProvidersController,
     AdminFeaturesController
+    
   ],
   providers: [
     PrismaHealthIndicator,
@@ -89,6 +91,7 @@ import { AdminFeaturesController } from './admin/features/features.controller';
     StoreService,
     AdminService,
     CategoriesService,
+    AdminFeaturesService
   ],
 })
 export class AppModule {}

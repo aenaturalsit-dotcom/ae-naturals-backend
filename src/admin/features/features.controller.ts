@@ -1,26 +1,26 @@
-// src/admin/features.controller.ts
+// src\admin\features\features.controller.ts
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
-import { FeaturesService } from './features.service';
+import { AdminGuard } from '../../auth/guards/admin.guard'; // Adjust path if needed
+import { AdminFeaturesService } from './features.service';
 import { CreateFeatureDto, UpdateFeatureDto, ReorderFeaturesDto } from './dto/feature.dto';
-import { AdminGuard } from 'src/auth/guards/admin.guard';
 
-@ApiTags('Admin Features')
+@ApiTags('Admin Features Master List')
 @ApiBearerAuth()
 @UseGuards(AuthGuard('jwt'), AdminGuard)
-@Controller('admin/features')
+@Controller('admin/features') // <-- This creates the /api/v1/admin/features route!
 export class AdminFeaturesController {
-  constructor(private readonly featuresService: FeaturesService) {}
+  constructor(private readonly featuresService: AdminFeaturesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get all feature highlights (Admin)' })
+  @ApiOperation({ summary: 'Get all master feature highlights' })
   async getAll() {
-    return this.featuresService.getAllFeaturesForAdmin();
+    return this.featuresService.getAllFeatures();
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new feature highlight' })
+  @ApiOperation({ summary: 'Create a new global feature highlight' })
   async create(@Body() createFeatureDto: CreateFeatureDto) {
     return this.featuresService.createFeature(createFeatureDto);
   }
@@ -38,7 +38,7 @@ export class AdminFeaturesController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete a feature highlight' })
+  @ApiOperation({ summary: 'Delete a global feature highlight' })
   async remove(@Param('id') id: string) {
     return this.featuresService.deleteFeature(id);
   }

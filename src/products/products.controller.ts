@@ -9,6 +9,7 @@ import {
 
 import * as express from 'express';
 import { ProductsService } from './products.service';
+import { ApiOperation } from '@nestjs/swagger';
 
 @Controller('products')
 export class ProductsController {
@@ -81,5 +82,11 @@ export class ProductsController {
   @Get('similar/:category')
   async findSimilar(@Param('category') category: string) {
     return this.productsService.getSimilarProducts(category);
+  }
+
+  // ✅ NEW: Must be placed ABOVE the :slug route!
+  @Get(':id/highlights')
+  async getHighlights(@Param('id') id: string) {
+    return this.productsService.getProductHighlights(id);
   }
 }

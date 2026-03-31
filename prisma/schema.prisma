@@ -106,23 +106,23 @@ model Product {
   ingredients      String?
   careInstructions String[] // ["Store below 5°C", "Consume within 24h"]
   deliveryInfo     String[] // ["Same day delivery", "Free over ₹999"]
-
+  highlights       ProductHighlight[]
   // NEW: Relation to Extra details
-  extra       ProductExtra?
-  aPlusBlocks APlusContent[]
+  extra            ProductExtra?
+  aPlusBlocks      APlusContent[]
   // Flipkart-style Attribute System
-  attributes  ProductAttribute[]
-  variants    ProductVariant[]
-  cartItems   CartItem[]
-  orderItems  OrderItem[]
-  category    Category           @relation(fields: [categoryId], references: [id])
-  categoryId  String
-  rating      Float              @default(4.5)
-  reviewCount Int                @default(0)
-  wishlist    Wishlist[]
-  reviews     Review[]
-  isActive    Boolean            @default(true)
-  createdAt   DateTime           @default(now())
+  attributes       ProductAttribute[]
+  variants         ProductVariant[]
+  cartItems        CartItem[]
+  orderItems       OrderItem[]
+  category         Category           @relation(fields: [categoryId], references: [id])
+  categoryId       String
+  rating           Float              @default(4.5)
+  reviewCount      Int                @default(0)
+  wishlist         Wishlist[]
+  reviews          Review[]
+  isActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
 }
 
 model ProductAttribute {
@@ -166,6 +166,39 @@ model ProductExtra {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// 2. Keep your FeatureHighlight model (I added the relation field)
+model FeatureHighlight {
+  id        String   @id @default(cuid())
+  title     String
+  icon      String // Stores Lucide icon name
+  color     String?  @default("#16a34a") // <-- ADD THIS LINE
+  order     Int      @default(0) // <-- ADD THIS BACK IN!
+  isGlobal  Boolean  @default(false) // Optional: If true, applies to all products by default
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products ProductHighlight[] // <-- ADD THIS LINE
+
+  @@index([isActive])
+}
+
+// 3. Create the Many-to-Many Mapping Table
+model ProductHighlight {
+  id          String  @id @default(cuid())
+  productId   String
+  highlightId String
+  order       Int     @default(0) // Order specific to THIS product
+  isActive    Boolean @default(true) // Toggle specific to THIS product
+
+  product   Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  highlight FeatureHighlight @relation(fields: [highlightId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, highlightId]) // A product can only have a highlight once
+  @@index([productId])
+  @@index([highlightId])
 }
 
 model Order {
@@ -340,16 +373,4 @@ model APlusContent {
   updatedAt DateTime       @updatedAt
 
   @@index([productId])
-}
-
-model FeatureHighlight {
-  id        String   @id @default(cuid())
-  title     String
-  icon      String // Stores Lucide icon name (e.g., "Truck", "ThermometerSnowflake") or URL
-  order     Int      @default(0)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([isActive, order]) // Optimized for frontend read queries
 }

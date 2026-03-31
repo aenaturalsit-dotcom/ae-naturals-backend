@@ -1,5 +1,5 @@
 // src\admin\products.controller.ts
-import { Controller, Put, Post, Delete, Body, Param, UseGuards, BadRequestException, Get } from '@nestjs/common';
+import { Controller, Put, Post, Delete, Body, Param, UseGuards, BadRequestException, Get, Patch } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
@@ -66,5 +66,14 @@ console.log('Updating product with ID:', id);
   @ApiResponse({ status: 200, description: 'The product has been deleted.' })
   async deleteProduct(@Param('id') id: string) {
     return this.productsService.deleteProduct(id);
+  }
+
+  @Patch(':id/highlights')
+  @ApiOperation({ summary: 'Sync highlights for a product' })
+  async syncHighlights(
+    @Param('id') id: string, 
+    @Body('highlightIds') highlightIds: string[]
+  ) {
+    return this.productsService.syncProductHighlights(id, highlightIds);
   }
 }
