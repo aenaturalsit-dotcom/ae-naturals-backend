@@ -48,24 +48,31 @@ enum APlusBlockType {
   TEXT
 }
 
+enum CartOwnerType {
+  USER
+  GUEST
+}
+
 // models
 model User {
-  id        String     @id @default(cuid())
-  email     String?    @unique // Changed to optional for phone-only users
-  phone     String     @unique // Added for mobile authentication
-  name      String
-  gender    Gender?
-  role      Role       @default(USER)
-  lastLogin DateTime   @default(now()) // Added for session tracking
-  orders    Order[]
-  cart      Cart?
+  id               String            @id @default(cuid())
+  email            String?           @unique // Changed to optional for phone-only users
+  phone            String            @unique // Added for mobile authentication
+  name             String
+  gender           Gender?
+  role             Role              @default(USER)
+  lastLogin        DateTime          @default(now()) // Added for session tracking
+  orders           Order[]
+  cart             Cart?             @relation(fields: [cartId], references: [id])
   // Add these two lines to satisfy the relation requirements
-  accounts  Account[]
-  sessions  Session[]
-  addresses Address[]
-  wishlist  Wishlist[]
-  reviews   Review[]
-  createdAt DateTime   @default(now())
+  accounts         Account[]
+  sessions         Session[]
+  checkoutSessions CheckoutSession[]
+  addresses        Address[]
+  wishlist         Wishlist[]
+  reviews          Review[]
+  createdAt        DateTime          @default(now())
+  cartId           String?
 }
 
 model Store {
@@ -92,16 +99,16 @@ model Category {
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  storeId     String
-  store       Store    @relation(fields: [storeId], references: [id])
-  name        String
-  slug        String   @unique
-  description String?
-  price       Float // Base Price
-  oldPrice    Float? // MRP
-  images      String[]
-
+  id               String                 @id @default(cuid())
+  storeId          String
+  store            Store                  @relation(fields: [storeId], references: [id])
+  name             String
+  slug             String                 @unique
+  description      String?
+  price            Float // Base Price
+  oldPrice         Float? // MRP
+  images           String[]
+  stock            Int                    @default(0) // ADDED: Fallback stock if no variants exist
   // Specific Metadata
   ingredients      String?
   careInstructions String[] // ["Store below 5°C", "Consume within 24h"]
@@ -114,15 +121,16 @@ model Product {
   attributes       ProductAttribute[]
   variants         ProductVariant[]
   cartItems        CartItem[]
+  reservations     InventoryReservation[]
   orderItems       OrderItem[]
-  category         Category           @relation(fields: [categoryId], references: [id])
+  category         Category               @relation(fields: [categoryId], references: [id])
   categoryId       String
-  rating           Float              @default(4.5)
-  reviewCount      Int                @default(0)
+  rating           Float                  @default(4.5)
+  reviewCount      Int                    @default(0)
   wishlist         Wishlist[]
   reviews          Review[]
-  isActive         Boolean            @default(true)
-  createdAt        DateTime           @default(now())
+  isActive         Boolean                @default(true)
+  createdAt        DateTime               @default(now())
 }
 
 model ProductAttribute {
@@ -134,12 +142,14 @@ model ProductAttribute {
 }
 
 model ProductVariant {
-  id            String  @id @default(cuid())
+  id            String                 @id @default(cuid())
   productId     String
-  product       Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product       Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
   name          String // e.g., "Eggless", "With Vase"
-  priceModifier Float   @default(0) // Added to base price
-  stock         Int     @default(0)
+  priceModifier Float                  @default(0) // Added to base price
+  stock         Int                    @default(0)
+  cartItems     CartItem[]
+  reservations  InventoryReservation[]
 }
 
 // NEW MODEL
@@ -276,24 +286,73 @@ model VerificationToken {
 }
 
 model Cart {
-  id        String     @id @default(cuid())
-  userId    String     @unique
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items     CartItem[]
-  updatedAt DateTime   @updatedAt
+  id        String        @id @default(cuid())
+  tenantId  String // Matches storeId/tenantId pattern
+  ownerType CartOwnerType
+  userId    String?
+  sessionId String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  items CartItem[]
+  users User[]
+
+  @@unique([tenantId, userId])
+  @@unique([tenantId, sessionId])
+  @@index([ownerType])
 }
 
 model CartItem {
-  id        String   @id @default(cuid())
-  cartId    String
-  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  productId String
-  product   Product  @relation(fields: [productId], references: [id])
-  quantity  Int      @default(1)
-  price     Float // Snapshot of price when added
-  createdAt DateTime @default(now())
+  id     String @id @default(cuid())
+  cartId String
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
 
-  @@unique([cartId, productId])
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  quantity               Int
+  priceSnapshot          Float // Changed to Float to match existing Product.price
+  compareAtPriceSnapshot Float?
+  tenantId               String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId, variantId])
+}
+
+model CheckoutSession {
+  id          String      @id @default(cuid())
+  tenantId    String
+  userId      String?
+  sessionId   String? // For guest checkout
+  status      OrderStatus @default(PENDING)
+  totalAmount Float
+  expiresAt   DateTime
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user         User?                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reservations InventoryReservation[]
+}
+
+model InventoryReservation {
+  id                String          @id @default(cuid())
+  productId         String
+  product           Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId         String?
+  variant           ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity          Int
+  checkoutSessionId String
+  checkoutSession   CheckoutSession @relation(fields: [checkoutSessionId], references: [id], onDelete: Cascade)
+  expiresAt         DateTime
+  createdAt         DateTime        @default(now())
+
+  @@index([productId, variantId])
+  @@index([expiresAt])
 }
 
 model ProviderConfig {

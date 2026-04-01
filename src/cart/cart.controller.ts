@@ -1,57 +1,27 @@
-// src/cart/cart.controller.ts
-import { 
-  Controller, Get, Post, Delete, Body, Req, Param, UseGuards, Patch 
-} from '@nestjs/common';
-import { 
-  ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody, ApiParam 
-} from '@nestjs/swagger';
-import { AuthGuard } from '@nestjs/passport';
+// src/modules/cart/cart.controller.ts
+import { Controller, Post, Get, Body, Req, UseGuards } from '@nestjs/common';
 import { CartService } from './cart.service';
-import { AddToCartDto, UpdateQuantityDto } from './dto/cart.dto';
+import { AddToCartDto } from '../dto/cart.dto';
+import { CurrentUser } from 'src/decorators/current-user.decorator';
 
-@ApiTags('Shopping Cart') // Groups these endpoints in the UI
-@ApiBearerAuth() // Indicates JWT is required
-@UseGuards(AuthGuard('jwt'))
-@Controller('cart')
+@Controller('v1/cart')
 export class CartController {
   constructor(private readonly cartService: CartService) {}
 
-  @Post('add')
-  @ApiOperation({ summary: 'Add an item to the user cart' })
-  @ApiBody({ type: AddToCartDto })
-  @ApiResponse({ status: 201, description: 'Item added or quantity incremented.' })
-  @ApiResponse({ status: 404, description: 'Product not found.' })
-  async add(@Req() req, @Body() dto: AddToCartDto) {
-    return this.cartService.addToCart(req.user.userId, dto.productId, dto.quantity);
-  }
-
   @Get()
-  @ApiOperation({ summary: 'Get the current user cart' })
-  @ApiResponse({ status: 200, description: 'Returns cart with items and products.' })
-  async getCart(@Req() req) {
-    return this.cartService.getCart(req.user.userId);
+  async getCart(@CurrentUser() user: any) {
+    return this.cartService.getCart(user.tenantId, user.userId, user.sessionId);
   }
 
-  @Patch('update')
-  @ApiOperation({ summary: 'Update item quantity in cart' })
-  @ApiBody({ type: UpdateQuantityDto })
-  @ApiResponse({ status: 200, description: 'Quantity updated successfully.' })
-  async update(@Req() req, @Body() dto: UpdateQuantityDto) {
-    return this.cartService.updateQuantity(req.user.userId, dto.productId, dto.quantity);
+  @Post('items')
+  async addItem(@CurrentUser() user: any, @Body() dto: AddToCartDto) {
+    return this.cartService.addToCart(user.tenantId, user.userId, user.sessionId, dto);
   }
 
-  @Delete('remove/:productId')
-  @ApiOperation({ summary: 'Remove a specific item from the cart' })
-  @ApiParam({ name: 'productId', description: 'ID of the product to remove' })
-  @ApiResponse({ status: 200, description: 'Item removed from cart.' })
-  async remove(@Req() req, @Param('productId') pid: string) {
-    return this.cartService.removeItem(req.user.userId, pid);
-  }
-
-  @Delete('clear')
-  @ApiOperation({ summary: 'Remove all items from the cart' })
-  @ApiResponse({ status: 200, description: 'Cart cleared successfully.' })
-  async clear(@Req() req) {
-    return this.cartService.clearCart(req.user.userId);
+  @Post('merge')
+  async mergeCart(@CurrentUser() user: any) {
+    if (!user.userId || !user.sessionId) return { message: 'No merge required' };
+    await this.cartService.mergeGuestCart(user.tenantId, user.userId, user.sessionId);
+    return { success: true, message: 'Cart merged successfully' };
   }
 }

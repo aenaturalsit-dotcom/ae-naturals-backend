@@ -31,7 +31,8 @@ import { ProvidersModule } from './providers/providers.module';
 import { ProvidersController } from './admin/providers.controller';
 import { EncryptionModule } from './common/security/encryption.module';
 import { ProfileModule } from './profile/profile.module';
-
+import { InventoryModule } from './inventory/inventory.module';
+import { CheckoutModule } from './checkout/checkout.module';
 
 // Features / Highlights
 import { AdminFeaturesController } from './admin/features/features.controller';
@@ -70,7 +71,9 @@ import { FeaturesModule } from './features/features.module';
     ProvidersModule,
     EncryptionModule,
     ProfileModule,
-    FeaturesModule
+    FeaturesModule,
+    InventoryModule,
+    CheckoutModule
   ],
   controllers: [
     HealthController,
