@@ -1,4 +1,3 @@
-
 # 🌸 AE Naturals Backend
 
 The **AE Naturals Backend** is a **production-grade, scalable Multi-Tenant E-Commerce API** built using **NestJS**, **Prisma**, **PostgreSQL**, **Redis**, and **Cloudinary**.
