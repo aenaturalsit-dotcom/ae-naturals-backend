@@ -19,7 +19,6 @@ This backend focuses on:
 • Multi-store support
 • Clean architecture
 
----
 
 # 🎯 Project Goals
 
