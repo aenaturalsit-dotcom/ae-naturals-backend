@@ -3,7 +3,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InventoryService } from '../inventory/inventory.service';
 import { BuyNowDto } from '../dto/buy-now.dto';
 import { OrderStatus } from '@prisma/client';
-import { PrismaService } from 'src/prisma';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class CheckoutService {

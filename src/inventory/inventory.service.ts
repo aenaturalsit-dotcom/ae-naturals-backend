@@ -1,6 +1,6 @@
 // src\modules\inventory\inventory.service.ts
 import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
-import { PrismaService } from 'src/prisma';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class InventoryService {
