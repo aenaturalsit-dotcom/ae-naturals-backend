@@ -53,11 +53,11 @@ export class AdminProductsController {
     @Param('id') id: string, 
     @Body() data: UpdateProductDto 
   ) {
-    console.log('Received update data:', data);
+
+
     if (!data || Object.keys(data).length === 0) {
       throw new BadRequestException('Payload is required');
     }
-console.log('Updating product with ID:', id);
     return this.productsService.updateProduct(id, data);
   }
 

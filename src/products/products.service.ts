@@ -210,7 +210,6 @@ async createProduct(data: any) {
 
   // ================== UPDATE ==================
  async updateProduct(id: string, data: any) {
-    this.logger.log(`✏️ Updating product: ${id}`);
 
     const {
       extra,
@@ -369,7 +368,6 @@ async createProduct(data: any) {
   // ================== GET PRODUCT HIGHLIGHTS ==================
   // ✅ NEW: Added this method to serve the frontend component
   async getProductHighlights(productId: string) {
-    console.log(`Fetching highlights for product ID: ${productId}`);
     
     const mappings = await this.prisma.productHighlight.findMany({
       where: {
@@ -384,7 +382,6 @@ async createProduct(data: any) {
         },
       },
     });
-    console.log(`Found ${mappings.length} highlights for product ID: ${productId}`);
 
     return mappings.map((m) => ({
       mappingId: m.id,
