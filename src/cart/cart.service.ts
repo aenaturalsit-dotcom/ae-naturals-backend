@@ -1,9 +1,5 @@
-import {
-  Injectable,
-  BadRequestException,
-  NotFoundException,
-  Logger,
-} from '@nestjs/common';
+// src/cart/cart.service.ts
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppCacheService } from '../common/cache/cache.service';
 import { CartOwnerType, Prisma } from '@prisma/client';
@@ -20,18 +16,11 @@ export class CartService {
     private inventoryService: InventoryService,
   ) {}
 
-  /**
-   * Generates a unique cache key based on User ID or Guest Session ID
-   */
   private getCacheKey(tenantId: string, userId?: string, sessionId?: string) {
     const identifier = userId ? `user:${userId}` : `guest:${sessionId}`;
     return `cart:${tenantId}:${identifier}`;
   }
 
-  /**
-   * Fetches the cart from cache/DB. 
-   * If it doesn't exist in DB, it creates one immediately.
-   */
   async getCart(tenantId: string, userId?: string, sessionId?: string) {
     const cacheKey = this.getCacheKey(tenantId, userId, sessionId);
 
@@ -44,47 +33,35 @@ export class CartService {
 
         let cart = await this.prisma.cart.findUnique({
           where,
-          include: {
-            items: { include: { product: true, variant: true } },
-          },
+          include: { items: { include: { product: true, variant: true } } },
         });
 
-        // 🔥 If no cart exists in DB, create one immediately (Old logic merged)
         if (!cart) {
-          const ownerType = userId ? CartOwnerType.USER : CartOwnerType.GUEST;
           cart = await this.prisma.cart.create({
             data: {
               tenantId,
-              ownerType,
+              ownerType: userId ? CartOwnerType.USER : CartOwnerType.GUEST,
               userId,
               sessionId,
             },
-            include: {
-              items: { include: { product: true, variant: true } },
-            },
+            include: { items: { include: { product: true, variant: true } } },
           });
         }
 
         return cart;
       },
-      3600, // Cache for 1 hour
+      3600,
     );
   }
 
-  /**
-   * Adds an item or variant to the cart with inventory validation
-   */
   async addToCart(tenantId: string, userId: string | undefined, sessionId: string | undefined, dto: AddToCartDto) {
-    // 1. Verify Stock using InventoryService (New logic)
     const availableStock = await this.inventoryService.getAvailableStock(dto.productId, dto.variantId);
     if (availableStock < dto.quantity) {
       throw new BadRequestException(`Insufficient stock. Only ${availableStock} available.`);
     }
 
-    // 2. Fetch/Create Cart (Using the auto-create logic from getCart)
     const cart = await this.getCart(tenantId, userId, sessionId);
 
-    // 3. Fetch Product/Variant to get price snapshot
     const product = await this.prisma.product.findUnique({ where: { id: dto.productId } });
     if (!product) throw new NotFoundException('Product not found');
     
@@ -95,53 +72,32 @@ export class CartService {
       priceSnapshot += variant.priceModifier;
     }
 
-    // 4. Upsert the Item (Merged variant support)
+    // 🔥 FIX: Clean TypeScript null casting for Prisma unique inputs
+    const safeVariantId = dto.variantId ? dto.variantId : null;
+
     const result = await this.prisma.cartItem.upsert({
       where: {
         cartId_productId_variantId: {
           cartId: cart.id,
           productId: dto.productId,
-          // Change: Ensure null is accepted or use undefined if the type is strict
-      variantId: dto.variantId || null as any,
+          variantId: safeVariantId as string, // Cast to satisfy TS, Prisma handles the null safely
         },
       },
-      update: {
-        quantity: { increment: dto.quantity },
-      },
+      update: { quantity: { increment: dto.quantity } },
       create: {
         cartId: cart.id,
         productId: dto.productId,
-        variantId: dto.variantId || null,
+        variantId: safeVariantId,
         quantity: dto.quantity,
         priceSnapshot: priceSnapshot,
         tenantId: tenantId,
       },
     });
 
-    // 5. Invalidate Cache
     await this.invalidateCache(tenantId, userId, sessionId);
     return result;
   }
 
-  async removeItem(tenantId: string, userId: string | undefined, sessionId: string | undefined, productId: string, variantId?: string) {
-    const cart = await this.getCart(tenantId, userId, sessionId);
-    
-    await this.prisma.cartItem.delete({
-      where: {
-        cartId_productId_variantId: {
-          cartId: cart.id,
-          productId,
-          variantId: variantId || null as any,
-        },
-      },
-    });
-
-    await this.invalidateCache(tenantId, userId, sessionId);
-  }
-
-  /**
-   * Merges a guest cart into a user cart upon login
-   */
   async mergeGuestCart(tenantId: string, userId: string, sessionId: string) {
     const guestCart = await this.getCart(tenantId, undefined, sessionId);
 
@@ -155,22 +111,12 @@ export class CartService {
       });
     }
 
-    // Delete guest cart after successful merge
     await this.prisma.cart.delete({ where: { id: guestCart.id } });
     await this.invalidateCache(tenantId, undefined, sessionId);
   }
 
-  /**
-   * Clears cache and database items
-   */
   async invalidateCache(tenantId: string, userId?: string, sessionId?: string) {
     const cacheKey = this.getCacheKey(tenantId, userId, sessionId);
     await this.cache.del(cacheKey);
-  }
-
-  async clearCart(tenantId: string, userId?: string, sessionId?: string) {
-    const cart = await this.getCart(tenantId, userId, sessionId);
-    await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
-    await this.invalidateCache(tenantId, userId, sessionId);
   }
 }

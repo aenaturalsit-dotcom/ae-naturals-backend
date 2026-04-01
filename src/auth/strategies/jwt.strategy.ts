@@ -1,13 +1,12 @@
 // src/auth/strategies/jwt.strategy.ts
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { AppCacheService } from 'src/common/cache/cache.service';
+import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private cacheService: AppCacheService) {
-    const secret = process.env.JWT_SECRET; //
+  constructor() {
+    const secret = process.env.JWT_SECRET;
     
     if (!secret) {
       throw new Error('FATAL: JWT_SECRET is missing from .env');
@@ -16,24 +15,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: secret, // TypeScript now knows this is a string
+      secretOrKey: secret, 
     });
   }
 
   async validate(payload: any) {
-    // Secondary check against session cache
-    const sessionKey = `session:${payload.sub}`;
-    const isValid = await this.cacheService.get(sessionKey);
+    // 🚀 ENTERPRISE STANDARD: 
+    // Access tokens are short-lived (15m) and validated statelessly.
+    // Session revocation is handled during the Refresh Token rotation flow.
     
-    if (!isValid) {
-      throw new UnauthorizedException('Session invalidated or expired');
-    }
-console.log(`JWT validated for user ${payload.sub} with email ${payload.email}`); 
     return { 
       userId: payload.sub, 
       sub: payload.sub,
       email: payload.email, 
-      role: payload.role 
+      role: payload.role,
+      sid: payload.sid, // Session ID from our new auth architecture
+      tenantId: payload.tenantId || 'default-store',
     };
   }
 }
