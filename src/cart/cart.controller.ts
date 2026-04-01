@@ -3,8 +3,11 @@ import { Controller, Post, Get, Body, Req, UseGuards } from '@nestjs/common';
 import { CartService } from './cart.service';
 import { AddToCartDto } from '../dto/cart.dto';
 import { CurrentUser } from 'src/decorators/current-user.decorator';
+import { AuthGuard } from '@nestjs/passport';
 
-@Controller('v1/cart')
+
+@UseGuards(AuthGuard('jwt'))
+@Controller('cart')                          
 export class CartController {
   constructor(private readonly cartService: CartService) {}
 

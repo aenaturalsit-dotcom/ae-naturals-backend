@@ -1,10 +1,12 @@
 // src/modules/checkout/checkout.controller.ts
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards } from '@nestjs/common';
 import { CheckoutService } from './checkout.service';
 import { BuyNowDto } from '../dto/buy-now.dto';
 import { CurrentUser } from 'src/decorators/current-user.decorator';
+import { AuthGuard } from '@nestjs/passport';
 
-@Controller('v1/checkout')
+@UseGuards(AuthGuard('jwt'))
+@Controller('checkout')
 export class CheckoutController {
   constructor(private readonly checkoutService: CheckoutService) {}
 

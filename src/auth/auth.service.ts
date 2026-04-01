@@ -475,102 +475,167 @@ export class AuthService {
   /**
    * REFRESH TOKEN ROTATION (The Big Company Way)
    */
+  /**
+   * REFRESH TOKEN ROTATION (Enterprise Standard)
+   */
   async refreshTokens(req: Request, res: Response) {
     const oldRefreshToken = req.cookies['refresh_token'];
-    if (!oldRefreshToken) throw new UnauthorizedException();
+    if (!oldRefreshToken) throw new UnauthorizedException('No refresh token provided');
 
     try {
-      const payload = await this.jwtService.verifyAsync(oldRefreshToken);
+      // 1. Decode token to get Session ID (sid)
+      const payload = await this.jwtService.verifyAsync(oldRefreshToken, {
+        secret: this.config.get('JWT_SECRET')
+      });
+      const sessionId = payload.sid;
 
-      // 1. Check if session is still active in Redis
-      const sessionKey = `session:${payload.sub}`;
-      const isValid = await this.cacheService.get(sessionKey);
+      // 2. Fetch Session from DB
+      const session = await this.prisma.session.findUnique({
+        where: { id: sessionId },
+      });
 
-      if (!isValid) {
-        this.logger.warn(
-          `Potential Breach: Revoked token used for user ${payload.sub}`,
-        );
-        throw new UnauthorizedException();
+      if (!session) {
+        this.logger.warn(`Invalidated session attempted for user ${payload.sub}`);
+        res.clearCookie('refresh_token');
+        throw new UnauthorizedException('Session expired');
       }
 
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-      });
+      // 3. TOKEN THEFT DETECTION
+      // Hash the incoming token and compare it to the DB.
+      const isMatch = await bcrypt.compare(oldRefreshToken, session.sessionToken);
+      
+      if (!isMatch) {
+        // 🔥 CRITICAL BREACH: A valid but old token was used. 
+        // This means two devices are fighting for the same session chain.
+        this.logger.error(`🚨 TOKEN THEFT DETECTED for user ${payload.sub}`);
+        
+        // Revoke ALL sessions for this user to protect them
+        await this.prisma.session.deleteMany({ where: { userId: payload.sub } });
+        res.clearCookie('refresh_token');
+        
+        throw new UnauthorizedException('Security breach detected. Please log in again.');
+      }
+
+      // 4. Check if session has expired in DB
+      if (session.expires < new Date()) {
+        await this.prisma.session.delete({ where: { id: sessionId } });
+        res.clearCookie('refresh_token');
+        throw new UnauthorizedException('Session expired');
+      }
+
+      const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
       if (!user) throw new UnauthorizedException();
 
-      // 2. Issue NEW tokens and ROTATE the refresh cookie
-      return this.issueTokens(res, user.id, user.email, user.role);
+      // 5. Issue new tokens (ROTATION) - passing the existing sessionId to update it
+      return this.issueTokens(res, user.id, user.email || user.phone, user.role, sessionId);
+
     } catch (e) {
-      throw new UnauthorizedException('Session expired');
+      res.clearCookie('refresh_token');
+      throw new UnauthorizedException('Session expired or invalid');
     }
   }
 
   /**
+   * Internal Helper: Issues Access Token and ROTATES Refresh Token
+   */
+ private async issueTokens(
+    res: Response,
+    userId: string,
+    identifier: string | null, // <-- FIX: Allow null
+    role: string,
+    existingSessionId?: string // Optional: If provided, rotates existing session
+  ) {
+    // 1. Create or reuse Session ID
+    const sessionId = existingSessionId || crypto.randomUUID();
+
+    // FIX: Provide a fallback string if email is null (e.g., Phone-only login)
+    const finalIdentifier = identifier || 'Phone Login'; 
+
+    // 2. Sign Payloads
+    const accessPayload = { sub: userId, email: finalIdentifier, role, sid: sessionId };
+    const refreshPayload = { sub: userId, sid: sessionId }; // sid links RT to DB
+
+    const accessToken = await this.jwtService.signAsync(accessPayload, {
+      expiresIn: this.config.get('JWT_ACCESS_EXPIRY') || '15m',
+    });
+
+    const refreshToken = await this.jwtService.signAsync(refreshPayload, {
+      expiresIn: this.config.get('JWT_REFRESH_EXPIRY') || '30d',
+    });
+
+    // 3. Hash Refresh Token for DB Storage (Never store raw RTs)
+    const salt = await bcrypt.genSalt(10);
+    const hashedRefreshToken = await bcrypt.hash(refreshToken, salt);
+    
+    // FIX: Safely parse the config value to satisfy TypeScript
+    const expiryString = this.config.get<string>('JWT_REFRESH_EXPIRY') || '30d';
+    const days = parseInt(expiryString) || 30;
+    
+    // Calculate Expiry Date for DB
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
+    // 4. Upsert Session in Database
+    await this.prisma.session.upsert({
+      where: { id: sessionId },
+      update: {
+        sessionToken: hashedRefreshToken,
+        expires: expiresAt,
+      },
+      create: {
+        id: sessionId,
+        userId: userId,
+        sessionToken: hashedRefreshToken,
+        expires: expiresAt,
+      }
+    });
+
+    // 5. Set strict enterprise cookies
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax', 
+      maxAge: days * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+
+    return {
+      access_token: accessToken,
+      user: { id: userId, email: finalIdentifier, role },
+    };
+  }
+
+  /**
+   * Logout targets the SPECIFIC device session, not all devices.
+   */
+  async logout(req: Request, res: Response) {
+      try {
+        const refreshToken = req.cookies['refresh_token'];
+        if (refreshToken) {
+           const payload = await this.jwtService.verifyAsync(refreshToken, { ignoreExpiration: true });
+           if (payload.sid) {
+              await this.prisma.session.delete({ where: { id: payload.sid } });
+           }
+        }
+      } catch (e) {} // Fail silently on logout if token is already bad
+
+      res.clearCookie('refresh_token', { path: '/' });
+      return { message: 'Logged out successfully' };
+  }
+
+
+  /**
    * Internal Helper: Issues Access Token (RAM) and Refresh Token (HTTP-Only Cookie)
    */
   /**
    * Internal Helper: Issues Access Token (RAM) and Refresh Token (HTTP-Only Cookie)
    */
-  private async issueTokens(
-    res: Response,
-    userId: string,
-    email: string | null,
-    role: string,
-  ) {
-    // Use a fallback if email is null (common in phone-only OTP login)
-    const identifier = email || BRAND.name; // Use brand name as identifier for phone logins without email
-
-    const payload = {
-      sub: userId,
-      email: identifier,
-      role,
-      tenantId: 'default-store',
-    };
-
-    const accessToken = await this.jwtService.signAsync(payload, {
-      expiresIn: this.config.get('JWT_ACCESS_EXPIRY') || '15m',
-    });
-
-    const refreshToken = await this.jwtService.signAsync(
-      { sub: userId },
-      {
-        expiresIn: this.config.get('JWT_REFRESH_EXPIRY') || '7d',
-      },
-    );
-
-    // SET SECURE COOKIE
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/',
-    });
-
-    await this.cacheService.set(
-      `session:${userId}`,
-      'active',
-      7 * 24 * 60 * 60,
-    );
-
-    return {
-      access_token: accessToken,
-      user: { id: userId, email: identifier, role },
-    };
-  }
+ 
 
   /**
    * Clears the session from Redis
    */
-  async logout(userId: string) {
-    const sessionKey = `session:${userId}`;
-    try {
-      await this.cacheService.del(sessionKey);
-    } catch (error) {
-      this.logger.error(`Redis session invalidation failed: ${error.message}`);
-    }
-    return { message: 'Logged out successfully' };
-  }
+ 
 
   /**
    * Generates admin session for OAuth/Google logins

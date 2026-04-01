@@ -1,0 +1,87 @@
+# .env
+DATABASE_URL=postgresql://postgres:1234@localhost:5433/ae-naturals
+
+
+CORS_ORIGINS=http://localhost:3000,http://localhost:4000,http://localhost:3001,https://yourdomain.com
+REDIS_HOST="localhost"
+REDIS_PORT=6379
+REDIS_URL=
+
+# Application Settings
+PORT=4000
+NODE_ENV="development"
+
+# Security
+JWT_SECRET=your_ultra_secure_random_string_here
+
+# ENCRYPTION_KEY
+ENCRYPTION_KEY="your_32_byte_encryption_key_here" # Must be 32 bytes for AES-256
+
+
+# --- STRIPE ---
+STRIPE_SECRET_KEY="sk_test_..."
+STRIPE_WEBHOOK_SECRET="whsec_..."
+
+# --- RAZORPAY ---
+RAZORPAY_KEY_ID="rzp_test_..."
+RAZORPAY_KEY_SECRET="your_razorpay_secret"
+
+# --- PHONEPE ---
+PHONEPE_MERCHANT_ID="YOUR_MERCHANT_ID"
+PHONEPE_SALT_KEY="your_salt_key"
+PHONEPE_SALT_INDEX="1"
+PHONEPE_ENV="UAT" # Change to "PROD" for live
+
+# --- SYSTEM ---
+NEXT_PUBLIC_API_URL="http://localhost:3000" # Frontend URL for 
+
+
+# Cloudinary Configuration
+CLD_CLOUD_NAME=
+CLD_API_KEY=
+CLD_API_SECRET=
+
+
+
+
+# Email Config
+EMAIL_PROVIDER=smtp # 'aws' or 'smtp'
+EMAIL_ENABLED=true
+
+# AWS SES
+
+
+
+# SMTP
+SMTP_HOST=smtp.office365.com
+SMTP_PORT=587
+SMTP_USER=your_email@outlook.com
+SMTP_PASS=your_password
+
+# SMS Config
+SMS_PROVIDER=msg91 # 'fast2sms' or 'msg91'
+SMS_ENABLED=true
+
+# Fast2SMS
+FAST2SMS_KEY=your_fast2sms_api_key
+
+# MSG91
+MSG91_AUTH_KEY=your_msg91_auth_key
+MSG91_TEMPLATE_ID=your_template_id
+
+
+# --- AUTH SETTINGS ---
+OTP_EXPIRY_MINUTES=5
+
+# JWT Durations
+JWT_ACCESS_EXPIRY=30m
+JWT_REFRESH_EXPIRY=30d
+
+# Redis TTL (in seconds) - 30 Days = 2592000
+REDIS_SESSION_TTL=2592000
+
+# Cookie Max Age (in milliseconds) - 30 Days = 2592000000
+COOKIE_MAX_AGE=2592000000
+
+
+

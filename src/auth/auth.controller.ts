@@ -33,7 +33,6 @@ export class AuthController {
     @Request() req: express.Request,
     @Res({ passthrough: true }) res: express.Response,
   ) {
-    console.log(`Refresh token request received. Cookies:`, req.cookies); // Debug log for cookies
     return this.authService.refreshTokens(req, res);
   }
 
@@ -68,19 +67,12 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Logged out successfully.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async logout(
-    @Request() req: any,
+    @Request() req: express.Request, // <-- Changed to express.Request
     @Res({ passthrough: true }) res: express.Response,
   ) {
-    res.clearCookie('refresh_token', {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-      path: '/',
-    });
-
-    const userId = req.user.sub || req.user.userId;
-
-    return this.authService.logout(userId);
+    // We no longer extract userId here. 
+    // The service handles reading the cookie and clearing it.
+    return this.authService.logout(req, res);
   }
 
   @Post('send-otp')
