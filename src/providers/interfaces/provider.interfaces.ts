@@ -1,11 +1,15 @@
-// src/providers/interfaces/provider.interfaces.ts
+export interface SmsPayload {
+  templateKey?: string;
+  variables?: Record<string, string>;
+}
 
 export interface EmailProviderInterface {
   send(to: string, subject: string, html: string): Promise<boolean>;
 }
 
 export interface SmsProviderInterface {
-  send(phone: string, message: string): Promise<boolean>;
+  // ✅ Added optional payload for MSG91 Template Routing
+  send(phone: string, message: string, payload?: SmsPayload): Promise<boolean>;
 }
 
 export interface PaymentProviderInterface {

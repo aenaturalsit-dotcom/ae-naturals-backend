@@ -21,65 +21,36 @@ export class SmsService {
    * Sends an SMS using a resilient dynamic fallback strategy.
    * It strictly respects the 'isActive' flag in the database.
    */
-  async sendSMS(phone: string, message: string): Promise<boolean> {
+  
+  // Update the method signature
+  async sendSMS(phone: string, message: string, payload?: { templateKey: string; variables: Record<string, string> }): Promise<boolean> {
     try {
-      // 1. Get ONLY active SMS providers ordered by priority (1 is highest)
       const providers = await this.getActiveProviders();
 
       if (!providers || providers.length === 0) {
-        this.logger.warn('No active SMS providers configured. SMS not sent.');
+        this.logger.warn('No active SMS providers configured.');
         return false;
       }
 
-      // 2. Iterate through available active providers (Automatic Fallback Loop)
       for (const item of providers) {
         try {
-          // 3. Decrypt the database configuration
-          const decryptedConfig = JSON.parse(
-            this.encryption.decrypt(item.config),
-          );
+          const decryptedConfig = JSON.parse(this.encryption.decrypt(item.config));
+          const provider = this.providerFactory.getProvider('SMS', item.provider, decryptedConfig);
 
-          this.logger.log(`Attempting SMS via ${item.provider} to ${phone}`);
+          // ✅ Pass the payload along. Twilio/Fast2SMS will ignore it and just use 'message'
+          await provider.send(phone, message, payload);
 
-          // 4. Initialize provider implementation via Factory
-          const provider = this.providerFactory.getProvider(
-            'SMS', 
-            item.provider, 
-            decryptedConfig,
-          );
-
-          // 5. Attempt to send
-          // 🔥 SYNCED: Changed from sendSms to send to match SmsProviderInterface
-          await provider.send(phone, message);
-
-          this.logger.log(`SMS sent successfully via ${item.provider}`);
-
-          // Log success to Database for auditing
           await this.logNotification('SMS', item.provider, phone, 'SUCCESS');
-          return true; // Success! Exit the loop.
-
+          return true; 
         } catch (err) {
           this.logger.error(`❌ Provider ${item.provider} failed: ${err.message}`);
-
-          // Log failure to Database
-          await this.logNotification(
-            'SMS',
-            item.provider,
-            phone,
-            'FAILED',
-            err.message,
-          );
-
-          // Continue to next provider in loop...
+          await this.logNotification('SMS', item.provider, phone, 'FAILED', err.message);
           this.logger.warn(`Switching to next available SMS fallback...`);
         }
       }
-
-      return false; // All active providers failed
+      return false;
     } catch (globalError) {
-      this.logger.error(
-        `Critical failure in SmsService: ${globalError.message}`,
-      );
+      this.logger.error(`Critical failure in SmsService: ${globalError.message}`);
       return false;
     }
   }
