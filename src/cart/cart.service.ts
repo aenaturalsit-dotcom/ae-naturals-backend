@@ -75,25 +75,33 @@ export class CartService {
     // 🔥 FIX: Clean TypeScript null casting for Prisma unique inputs
     const safeVariantId = dto.variantId ? dto.variantId : null;
 
-    const result = await this.prisma.cartItem.upsert({
+   // ADD THIS INSTEAD:
+    const existingItem = await this.prisma.cartItem.findFirst({
       where: {
-        cartId_productId_variantId: {
-          cartId: cart.id,
-          productId: dto.productId,
-          variantId: safeVariantId as string, // Cast to satisfy TS, Prisma handles the null safely
-        },
-      },
-      update: { quantity: { increment: dto.quantity } },
-      create: {
         cartId: cart.id,
         productId: dto.productId,
-        variantId: safeVariantId,
-        quantity: dto.quantity,
-        priceSnapshot: priceSnapshot,
-        tenantId: tenantId,
+        variantId: safeVariantId, // Prisma handles null safely in findFirst
       },
     });
 
+    let result;
+    if (existingItem) {
+      result = await this.prisma.cartItem.update({
+        where: { id: existingItem.id },
+        data: { quantity: { increment: dto.quantity } },
+      });
+    } else {
+      result = await this.prisma.cartItem.create({
+        data: {
+          cartId: cart.id,
+          productId: dto.productId,
+          variantId: safeVariantId,
+          quantity: dto.quantity,
+          priceSnapshot: priceSnapshot,
+          tenantId: tenantId,
+        },
+      });
+    }
     await this.invalidateCache(tenantId, userId, sessionId);
     return result;
   }
@@ -114,7 +122,75 @@ export class CartService {
     await this.prisma.cart.delete({ where: { id: guestCart.id } });
     await this.invalidateCache(tenantId, undefined, sessionId);
   }
+async removeItem(tenantId: string, userId: string | undefined, sessionId: string | undefined, productId: string, variantId?: string) {
+    const cart = await this.getCart(tenantId, userId, sessionId);
+    const safeVariantId = variantId ? variantId : null;
 
+    const existingItem = await this.prisma.cartItem.findFirst({
+      where: {
+        cartId: cart.id,
+        productId: productId,
+        variantId: safeVariantId,
+      },
+    });
+
+    if (!existingItem) {
+      throw new NotFoundException('Item not found in cart');
+    }
+
+    await this.prisma.cartItem.delete({
+      where: { id: existingItem.id },
+    });
+
+    await this.invalidateCache(tenantId, userId, sessionId);
+    return { success: true, message: 'Item removed from cart' };
+  }
+
+  async clearCart(tenantId: string, userId: string | undefined, sessionId: string | undefined) {
+    const cart = await this.getCart(tenantId, userId, sessionId);
+
+    await this.prisma.cartItem.deleteMany({
+      where: { cartId: cart.id },
+    });
+
+    await this.invalidateCache(tenantId, userId, sessionId);
+    return { success: true, message: 'Cart cleared' };
+  }
+
+  async updateQuantity(tenantId: string, userId: string | undefined, sessionId: string | undefined, productId: string, quantity: number, variantId?: string) {
+    if (quantity <= 0) {
+      // If quantity is 0 or less, just remove the item
+      return this.removeItem(tenantId, userId, sessionId, productId, variantId);
+    }
+
+    const availableStock = await this.inventoryService.getAvailableStock(productId, variantId);
+    if (availableStock < quantity) {
+      throw new BadRequestException(`Insufficient stock. Only ${availableStock} available.`);
+    }
+
+    const cart = await this.getCart(tenantId, userId, sessionId);
+    const safeVariantId = variantId ? variantId : null;
+
+    const existingItem = await this.prisma.cartItem.findFirst({
+      where: {
+        cartId: cart.id,
+        productId: productId,
+        variantId: safeVariantId,
+      },
+    });
+
+    if (!existingItem) {
+      throw new NotFoundException('Item not found in cart');
+    }
+
+    const result = await this.prisma.cartItem.update({
+      where: { id: existingItem.id },
+      data: { quantity },
+    });
+
+    await this.invalidateCache(tenantId, userId, sessionId);
+    return result;
+  }
   async invalidateCache(tenantId: string, userId?: string, sessionId?: string) {
     const cacheKey = this.getCacheKey(tenantId, userId, sessionId);
     await this.cache.del(cacheKey);

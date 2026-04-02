@@ -1,5 +1,5 @@
 // src/cart/cart.controller.ts
-import { Controller, Post, Get, Body, Headers, BadRequestException, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Headers, BadRequestException, UseGuards, Patch, Delete } from '@nestjs/common';
 import { CartService } from './cart.service';
 import { AddToCartDto } from '../dto/cart.dto';
 import { CurrentUser } from 'src/decorators/current-user.decorator';
@@ -60,5 +60,39 @@ export class CartController {
 
     await this.cartService.mergeGuestCart(tenantId, userId, guestSessionId);
     return { success: true, message: 'Cart merged successfully' };
+  }
+
+  @Patch('items')
+  @UseGuards(OptionalJwtAuthGuard)
+  async updateQuantity(
+    @CurrentUser() user: any,
+    @Headers('x-session-id') guestSessionId: string,
+    @Body() body: { productId: string; quantity: number; variantId?: string },
+  ) {
+    const { tenantId, userId, sessionId } = this.extractIdentifiers(user, guestSessionId);
+    return this.cartService.updateQuantity(tenantId, userId, sessionId, body.productId, body.quantity, body.variantId);
+  }
+
+  // DELETE /cart/items -> remove specific item
+  @Delete('items')
+  @UseGuards(OptionalJwtAuthGuard)
+  async removeItem(
+    @CurrentUser() user: any,
+    @Headers('x-session-id') guestSessionId: string,
+    @Body() body: { productId: string; variantId?: string },
+  ) {
+    const { tenantId, userId, sessionId } = this.extractIdentifiers(user, guestSessionId);
+    return this.cartService.removeItem(tenantId, userId, sessionId, body.productId, body.variantId);
+  }
+
+  // DELETE /cart -> clear entire cart
+  @Delete()
+  @UseGuards(OptionalJwtAuthGuard)
+  async clearCart(
+    @CurrentUser() user: any,
+    @Headers('x-session-id') guestSessionId: string,
+  ) {
+    const { tenantId, userId, sessionId } = this.extractIdentifiers(user, guestSessionId);
+    return this.cartService.clearCart(tenantId, userId, sessionId);
   }
 }
