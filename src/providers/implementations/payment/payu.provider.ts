@@ -8,20 +8,33 @@ export class PayuProvider implements PaymentProviderInterface {
 
   constructor(config: any) {
     if (!config.merchant_key || !config.merchant_salt) {
-      throw new Error('PayU configuration is incomplete.');
+      throw new Error('PayU configuration is incomplete: Missing Key or Salt.');
+    }
+    // ✅ ADD THIS CHECK to fail early instead of breaking the redirect
+    if (!config.frontend_url) {
+      throw new Error('PayU configuration is incomplete: Missing frontend_url.');
     }
     this.config = config;
   }
-
   async createOrder(orderId: string, amount: number, currency: string): Promise<any> {
+    // 1. TRIM KEYS (Crucial: Removes hidden spaces copied from the dashboard)
+    const key = String(this.config.merchant_key).trim();
+    const salt = String(this.config.merchant_salt).trim();
+
     const txnid = orderId;
     const productinfo = 'Order Payment';
     const firstname = 'Customer';
     const email = 'customer@example.com';
 
-    const hashString = `${this.config.merchant_key}|${txnid}|${amount}|${productinfo}|${firstname}|${email}|||||||||||${this.config.merchant_salt}`;
+    // 2. STRICT STRING AMOUNT FORMATTING
+    // Forces "456.00" as a String so JSON doesn't strip the decimals
+    const formattedAmount = Number(amount).toFixed(2);
+
+    // 3. EXACT HASH STRING
+    const hashString = `${key}|${txnid}|${formattedAmount}|${productinfo}|${firstname}|${email}|||||||||||${salt}`;
     const hash = crypto.createHash('sha512').update(hashString).digest('hex');
 
+    
     const actionUrl = this.config.is_production === 'true'
       ? 'https://secure.payu.in/_payment'
       : 'https://test.payu.in/_payment';
@@ -30,14 +43,20 @@ export class PayuProvider implements PaymentProviderInterface {
       providerOrderId: txnid,
       provider: 'PAYU',
       formPayload: {
-        key: this.config.merchant_key,
+        key,
         txnid,
-        amount,
+        amount: formattedAmount, // Passed strictly as string
         productinfo,
         firstname,
         email,
-        surl: `${this.config.frontend_url}/payment/success`,
-        furl: `${this.config.frontend_url}/payment/failed`,
+        // 4. EXPLICIT BLANK UDFS (Forces frontend to create hidden inputs)
+        udf1: '',
+        udf2: '',
+        udf3: '',
+        udf4: '',
+        udf5: '',
+        surl: `${this.config.frontend_url}/api/payu/callback`,
+        furl: `${this.config.frontend_url}/api/payu/callback`,
         hash,
         actionUrl
       }
@@ -45,11 +64,20 @@ export class PayuProvider implements PaymentProviderInterface {
   }
 
   verifyPayment(paymentData: any): boolean {
-    const { status, email, firstname, productinfo, amount, txnid, hash: receivedHash } = paymentData;
+    const { status, email, firstname, productinfo, amount, txnid, hash: receivedHash, additionalCharges } = paymentData;
 
-    const reverseHashString = `${this.config.merchant_salt}|${status}|||||||||||${email}|${firstname}|${productinfo}|${amount}|${txnid}|${this.config.merchant_key}`;
+    const key = String(this.config.merchant_key).trim();
+    const salt = String(this.config.merchant_salt).trim();
+
+    let reverseHashString = '';
+
+    if (additionalCharges) {
+       reverseHashString = `${additionalCharges}|${salt}|${status}|||||||||||${email}|${firstname}|${productinfo}|${amount}|${txnid}|${key}`;
+    } else {
+       reverseHashString = `${salt}|${status}|||||||||||${email}|${firstname}|${productinfo}|${amount}|${txnid}|${key}`;
+    }
+
     const calculatedHash = crypto.createHash('sha512').update(reverseHashString).digest('hex');
-
     return calculatedHash === receivedHash;
   }
 }

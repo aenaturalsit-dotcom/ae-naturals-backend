@@ -70,9 +70,10 @@ export class ProviderConfigService {
 
   // Used by the Admin API to update configurations
   async saveConfig(data: { type: ProviderType; provider: string; isActive: boolean; priority: number; config: any }) {
+    
     // Encrypt the JSON object into a secure string
     const encryptedConfig = this.encryption.encrypt(JSON.stringify(data.config));
-    
+   
     await this.prisma.providerConfig.upsert({
       where: { type_provider: { type: data.type, provider: data.provider } },
       update: { isActive: data.isActive, priority: data.priority, config: encryptedConfig },
@@ -88,7 +89,7 @@ export class ProviderConfigService {
   // Used by the Admin API to update an existing provider (Edit or Toggle Status)
   async updateConfigById(id: string, data: any) {
     const updatePayload: any = {};
-
+console.log(data,"-------data");
     // Only update fields that were actually sent in the PATCH request
     if (data.isActive !== undefined) updatePayload.isActive = data.isActive;
     if (data.priority !== undefined) updatePayload.priority = data.priority;
@@ -103,6 +104,7 @@ export class ProviderConfigService {
       where: { id },
       data: updatePayload,
     });
+    console.log(updated,"--------updated")
 
     // Invalidate the cache for this specific provider type
     await this.cacheManager.del(`providers_active_${updated.type}`);

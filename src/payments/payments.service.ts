@@ -1,55 +1,71 @@
-// src/payments/payments.service.ts
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service'; 
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { ProviderFactory } from '../providers/provider.factory';
 import { ProviderConfigService } from '../providers/provider-config.service';
-// ✅ IMPORT NOTIFICATION SERVICE
-import { NotificationService } from '../notifications/notification.service'; 
+import { NotificationService } from '../notifications/notification.service';
 
 export type PaymentGateway = 'STRIPE' | 'RAZORPAY' | 'PHONEPE' | 'PAYU';
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private prisma: PrismaService,
     private providerFactory: ProviderFactory,
     private configService: ProviderConfigService,
     private notificationService: NotificationService,
-
   ) {}
 
-  async initiateCheckout(orderId: string, provider: PaymentGateway, userId: string) {
-    const order = await this.prisma.order.findUnique({ 
+  async initiateCheckout(
+    orderId: string,
+    provider: PaymentGateway,
+    userId: string,
+  ) {
+    const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { store: true } 
+      include: { store: true },
     });
-    
+
     if (!order) throw new BadRequestException('Order not found');
 
-    // 1. Fetch active global config from DB Cache
+    // 1. Fetch active global config from DB/Cache dynamically
     const activeConfigs = await this.configService.getActiveConfigs('PAYMENT');
-    const globalConfig = activeConfigs.find(c => c.provider === provider) || { config: {} };
+    const globalConfig = activeConfigs.find((c) => c.provider === provider);
+    
+    if (!globalConfig || !globalConfig.config) {
+      throw new BadRequestException(`Payment provider ${provider} is not active or missing configuration.`);
+    }
 
-    // 2. Merge Global DB keys with specific Store tenant overrides (White-label)
-    const storePaymentKeys = (order.store.paymentConfig as Record<string, string>) || {};
-    const finalConfig = { 
-      ...globalConfig.config, 
-      ...storePaymentKeys,
-      frontend_url: storePaymentKeys.frontend_url || process.env.FRONTEND_URL,
-      backend_webhook_url: process.env.BACKEND_URL 
+    // 2. Merge Global DB keys with specific Store tenant overrides safely
+    const storePaymentKeys = (order.store?.paymentConfig as Record<string, any>) || {};
+    
+    // ✅ CRITICAL FIX: Merge cleanly. Do NOT force process.env fallbacks here, 
+    // otherwise you will overwrite the valid DB settings with 'undefined'
+    const finalConfig = {
+      ...globalConfig.config,
+      ...storePaymentKeys, 
     };
 
-    // 3. ✅ DYNAMIC INSTANTIATION (No more giant switch statements!)
-    const paymentInstance = this.providerFactory.getProvider('PAYMENT', provider, finalConfig);
+    // 3. Dynamic Instantiation via Factory
+    const paymentInstance = this.providerFactory.getProvider(
+      'PAYMENT',
+      provider,
+      finalConfig,
+    );
 
-    // 4. Execute Payment
-    const paymentResult = await paymentInstance.createOrder(order.id, order.totalAmount, 'INR');
+    // 4. Execute Payment payload generation
+    const paymentResult = await paymentInstance.createOrder(
+      order.id,
+      order.totalAmount,
+      'INR',
+    );
 
-    // 5. Save the Payment ID so your Webhooks don't fail
+    // 5. Save the Provider's generated TXN/Order ID to your DB
     if (paymentResult.providerOrderId) {
       await this.prisma.order.update({
         where: { id: order.id },
-        data: { paymentProviderId: paymentResult.providerOrderId }
+        data: { paymentProviderId: paymentResult.providerOrderId },
       });
     }
 
@@ -57,64 +73,94 @@ export class PaymentsService {
   }
 
   // ✅ DYNAMIC VERIFICATION FOR PAYU/RAZORPAY
-  async verifyPayment(provider: PaymentGateway, orderId: string, paymentData: any) {
-    const order = await this.prisma.order.findUnique({ 
+  async verifyPayment(
+    provider: PaymentGateway,
+    orderId: string,
+    paymentData: any,
+  ) {
+    const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { store: true } 
+      include: { store: true },
     });
-    
+
     if (!order) throw new BadRequestException('Order not found');
 
+    // 1. Fetch exact same config used for creation
     const activeConfigs = await this.configService.getActiveConfigs('PAYMENT');
-    const globalConfig = activeConfigs.find(c => c.provider === provider) || { config: {} };
-    const storePaymentKeys = (order.store.paymentConfig as Record<string, string>) || {};
+    const globalConfig = activeConfigs.find((c) => c.provider === provider);
+    
+    if (!globalConfig || !globalConfig.config) {
+      throw new BadRequestException(`Payment provider ${provider} is not active or missing configuration.`);
+    }
+
+    const storePaymentKeys = (order.store?.paymentConfig as Record<string, any>) || {};
     const finalConfig = { ...globalConfig.config, ...storePaymentKeys };
 
-    const paymentInstance = this.providerFactory.getProvider('PAYMENT', provider, finalConfig);
+    // 2. Instantiate
+    const paymentInstance = this.providerFactory.getProvider(
+      'PAYMENT',
+      provider,
+      finalConfig,
+    );
 
-    // Dynamic verification
+    if (!paymentInstance.verifyPayment) {
+      throw new BadRequestException('Verification is not supported by this payment provider.');
+    }
+
+    // 3. Verify the hash/signature
     const isValid = paymentInstance.verifyPayment(paymentData);
 
     if (isValid) {
-      // ✅ ADD THIS CHECK: Narrow the type to satisfy TypeScript and prevent runtime null errors
       if (!order.paymentProviderId) {
-        throw new BadRequestException('Order does not have a valid payment provider ID');
+        throw new BadRequestException('Order does not have a valid payment provider ID attached.');
       }
 
+      // 4. Mark paid and dispatch notifications
       await this.markOrderPaid(order.paymentProviderId);
-      return { success: true, orderId: order.id, frontendUrl: finalConfig.frontend_url };
+      
+      return {
+        success: true,
+        orderId: order.id,
+        frontendUrl: finalConfig.frontend_url, // Used by the controller to redirect the user
+      };
     }
-    
-    throw new BadRequestException('Payment signature validation failed');
-   
-    
+
+    throw new BadRequestException('Payment signature validation failed. Hashes do not match.');
   }
 
+  // ✅ HANDLES SUCCESS WORKFLOW (Status, Cart cleanup, Email/SMS)
   async markOrderPaid(paymentId: string) {
+    console.log(`marking order paid for payment id ${paymentId}`)
     const order = await this.prisma.order.update({
       where: { paymentProviderId: paymentId },
-      data: { status: 'PAID' }, 
-      include: { user: true }
+      data: { status: 'PAID' },
+      include: { user: true },
     });
 
-    // Safely clear cart only on success
+    // 1. Safely clear the user's cart now that they have purchased
     await this.prisma.cartItem.deleteMany({
-      where: { cart: { userId: order.userId } }
+      where: { cart: { userId: order.userId } },
     });
-// 3. ✅ FIRE SUCCESS EMAIL & SMS HERE
+
+    // 2. Fire Success Email & SMS Notifications in the background
     if (order.user) {
-      this.notificationService.sendOrderConfirmation(
-        {
-          email: order.user.email || '',
-          phone: order.user.phone || '',
-          name: order.user.name || 'Customer',
-        },
-        {
-          id: order.id,
-          amount: order.totalAmount,
-        },
-      ).catch((err) => console.error('Failed to send success notification', err));
+      this.notificationService
+        .sendOrderConfirmation(
+          {
+            email: order.user.email || '',
+            phone: order.user.phone || '',
+            name: order.user.name || 'Customer',
+          },
+          {
+            id: order.id,
+            amount: order.totalAmount,
+          },
+        )
+        .catch((err) =>
+          this.logger.error(`Failed to send success notification: ${err.message}`),
+        );
     }
+    
     return order;
   }
 }
