@@ -3,6 +3,8 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service'; 
 import { ProviderFactory } from '../providers/provider.factory';
 import { ProviderConfigService } from '../providers/provider-config.service';
+// ✅ IMPORT NOTIFICATION SERVICE
+import { NotificationService } from '../notifications/notification.service'; 
 
 export type PaymentGateway = 'STRIPE' | 'RAZORPAY' | 'PHONEPE' | 'PAYU';
 
@@ -10,9 +12,10 @@ export type PaymentGateway = 'STRIPE' | 'RAZORPAY' | 'PHONEPE' | 'PAYU';
 export class PaymentsService {
   constructor(
     private prisma: PrismaService,
-    // ✅ INJECT YOUR AWESOME FACTORY AND CONFIG SERVICE
     private providerFactory: ProviderFactory,
     private configService: ProviderConfigService,
+    private notificationService: NotificationService,
+
   ) {}
 
   async initiateCheckout(orderId: string, provider: PaymentGateway, userId: string) {
@@ -91,13 +94,27 @@ export class PaymentsService {
     const order = await this.prisma.order.update({
       where: { paymentProviderId: paymentId },
       data: { status: 'PAID' }, 
+      include: { user: true }
     });
 
     // Safely clear cart only on success
     await this.prisma.cartItem.deleteMany({
       where: { cart: { userId: order.userId } }
     });
-
+// 3. ✅ FIRE SUCCESS EMAIL & SMS HERE
+    if (order.user) {
+      this.notificationService.sendOrderConfirmation(
+        {
+          email: order.user.email || '',
+          phone: order.user.phone || '',
+          name: order.user.name || 'Customer',
+        },
+        {
+          id: order.id,
+          amount: order.totalAmount,
+        },
+      ).catch((err) => console.error('Failed to send success notification', err));
+    }
     return order;
   }
 }

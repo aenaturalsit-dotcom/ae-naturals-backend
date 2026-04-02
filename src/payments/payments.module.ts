@@ -9,9 +9,10 @@ import { StripeService } from './providers/stripe.service';
 import { RazorpayService } from './providers/razorpay.service';
 import { PhonePeService } from './providers/phonepe.service';
 import { ProvidersModule } from 'src/providers/providers.module';
+import { NotificationModule } from 'src/notifications/notification.module';
 
 @Module({
-  imports: [PrismaModule, HttpModule,ProvidersModule],
+  imports: [PrismaModule, HttpModule,ProvidersModule,NotificationModule],
   controllers: [PaymentsController],
   providers: [PaymentsService, StripeService, RazorpayService, PhonePeService],
   exports: [PaymentsService],

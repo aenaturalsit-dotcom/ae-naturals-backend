@@ -1,37 +1,36 @@
-// src/admin/providers.controller.ts
 import { Controller, Get, Post, Body, UseGuards, Query, Patch, Param } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport'; // Add this import
+import { AuthGuard } from '@nestjs/passport'; 
+import { AdminGuard } from '../auth/guards/admin.guard';
 import { ProviderConfigService } from '../providers/provider-config.service';
 import { ProviderType } from '@prisma/client';
-import { AdminGuard } from '../auth/guards/admin.guard';
 
-// 1. Chain the guards: AuthGuard decodes the token first, THEN AdminGuard checks the role
 @UseGuards(AuthGuard('jwt'), AdminGuard)
 @Controller('admin/providers')
 export class ProvidersController {
   constructor(private readonly providerConfigService: ProviderConfigService) {}
 
-  // I've also added the GET route here since your React frontend needs it!
   @Get()
   async getProviders(@Query('type') type: ProviderType) {
     if (!type) return [];
-    
-    // 🔥 Changed from getActiveConfigs to getAllAdminConfigs
     return this.providerConfigService.getAllAdminConfigs(type.toUpperCase() as ProviderType);
   }
 
+  // ✅ Handles POST /api/v1/admin/providers
   @Post()
-  async saveProviderConfig(
-    @Body() body: { type: ProviderType; provider: string; isActive: boolean; priority: number; config: any }
-  ) {
+  async saveProviderConfig(@Body() body: any) {
     return this.providerConfigService.saveConfig(body);
   }
 
-  // 🔥 ADD THIS NEW PATCH ENDPOINT
+  // ✅ Handles POST /api/v1/admin/providers/config (Resolves your 404 error)
+  @Post('config')
+  async saveProviderConfigAlias(@Body() body: any) {
+    return this.providerConfigService.saveConfig(body);
+  }
+
   @Patch(':id')
   async updateProvider(
     @Param('id') id: string,
-    @Body() body: any // Accepts partial updates (like just toggling isActive)
+    @Body() body: any 
   ) {
     return this.providerConfigService.updateConfigById(id, body);
   }

@@ -23,6 +23,7 @@ export class SmsService {
    */
   
   // Update the method signature
+  // Update the method signature
   async sendSMS(phone: string, message: string, payload?: { templateKey: string; variables: Record<string, string> }): Promise<boolean> {
     try {
       const providers = await this.getActiveProviders();
@@ -37,7 +38,7 @@ export class SmsService {
           const decryptedConfig = JSON.parse(this.encryption.decrypt(item.config));
           const provider = this.providerFactory.getProvider('SMS', item.provider, decryptedConfig);
 
-          // ✅ Pass the payload along. Twilio/Fast2SMS will ignore it and just use 'message'
+          // ✅ Pass the payload. Twilio/Fast2SMS ignores it and uses the raw 'message'
           await provider.send(phone, message, payload);
 
           await this.logNotification('SMS', item.provider, phone, 'SUCCESS');

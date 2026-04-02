@@ -1,4 +1,3 @@
-// src/providers/implementations/sms/msg91.provider.ts
 import { SmsProviderInterface, SmsPayload } from '../../interfaces/provider.interfaces';
 import axios from 'axios';
 
@@ -10,11 +9,12 @@ export class Msg91Provider implements SmsProviderInterface {
     if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
 
     try {
-      // 1. 🔥 DYNAMIC TEMPLATE FLOW (Order Events)
+      // 1. 🔥 DYNAMIC TEMPLATE FLOW (Order & Payment Events)
       if (payload && payload.templateKey) {
-        // Look up specific template ID from Admin config based on the key
-        const configKey = `template_${payload.templateKey.toLowerCase()}`;
-        const templateId = this.config[configKey] || this.config.templateId; // Fallback to default
+        // Map 'OTP' strictly to the default templateId, else look up the specific event template
+        let templateId = payload.templateKey === 'OTP' 
+          ? this.config.templateId 
+          : this.config[`template_${payload.templateKey.toLowerCase()}`];
 
         if (!templateId) {
           throw new Error(`Missing MSG91 template ID for event: ${payload.templateKey}`);
@@ -32,13 +32,13 @@ export class Msg91Provider implements SmsProviderInterface {
         return true;
       }
 
-      // 2. 🛡️ LEGACY OTP FLOW (Backward Compatibility)
-      const otpCode = message.match(/\d{6}/)?.[0] || message;
+      // 2. 🛡️ LEGACY OTP FLOW (Backward Compatibility if no payload is passed)
+      const otpCode = message.match(/\d{4,6}/)?.[0] || message;
       
       await axios.post(
         'https://control.msg91.com/api/v5/flow/',
         {
-          template_id: this.config.templateId, // Default OTP template
+          template_id: this.config.templateId,
           short_url: '0',
           recipients: [{ mobiles: cleanPhone, OTP: otpCode }],
         },
@@ -47,7 +47,7 @@ export class Msg91Provider implements SmsProviderInterface {
       return true;
 
     } catch (error) {
-      // Throwing error triggers the fallback to Twilio/Fast2SMS in SmsService
+      // Throwing error automatically triggers the fallback to Twilio/Fast2SMS in SmsService
       throw new Error(`MSG91 Error: ${error?.response?.data?.message || error.message}`);
     }
   }

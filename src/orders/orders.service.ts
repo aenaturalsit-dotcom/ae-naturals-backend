@@ -92,9 +92,9 @@ export class OrdersService {
       await this.cartService.invalidateCache(storeId, userId);
 
       // 6. Async Notification
-      this.sendOrderNotificationsAsync(userId, order).catch((err) =>
-        this.logger.error(`Failed to send order notification: ${err.message}`),
-      );
+      // this.sendOrderNotificationsAsync(userId, order).catch((err) =>
+      //   this.logger.error(`Failed to send order notification: ${err.message}`),
+      // );
 
       return order;
     } catch (error) {
