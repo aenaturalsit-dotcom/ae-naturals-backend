@@ -18,15 +18,15 @@ export class PaymentsController {
   ) {}
 
   // 1. Endpoint called by your Frontend to start payment
-  @Post('checkout')
-  async checkout(
-    @Body() body: { orderId: string, provider: PaymentGateway }, 
-    @Req() req: any
-  ) {
-    // Note: Use your existing AuthGuard to get req.user.id
-    const userId = req.user?.id || 'guest_user'; 
-    return this.paymentsService.initiateCheckout(body.orderId, body.provider, userId);
-  }
+  @Post('initiate') // <--- FIXED ROUTE
+async checkout(
+  @Body() body: { orderId: string, provider: PaymentGateway }, 
+  @Req() req: any
+) {
+  // Graceful fallback for JWT payload variations
+  const userId = req.user?.id || req.user?.userId || 'guest_user'; 
+  return this.paymentsService.initiateCheckout(body.orderId, body.provider, userId);
+}
 
   // 2. Stripe Webhook
  @Post('stripe/webhook')

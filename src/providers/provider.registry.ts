@@ -10,6 +10,9 @@ import { TwilioProvider } from './implementations/sms/twilio.provider';
 
 import { RazorpayProvider } from './implementations/payment/razorpay.provider';
 import { StripeProvider } from './implementations/payment/stripe.provider';
+// ✅ IMPORT YOUR NEW PROVIDERS
+import { PhonepeProvider } from './implementations/payment/phonepe.provider';
+import { PayuProvider } from './implementations/payment/payu.provider';
 
 export const PROVIDER_REGISTRY = {
   EMAIL: {
@@ -25,5 +28,7 @@ export const PROVIDER_REGISTRY = {
   PAYMENT: {
     RAZORPAY: RazorpayProvider,
     STRIPE: StripeProvider,
+    PHONEPE: PhonepeProvider, // ✅ ADD PHONEPE
+    PAYU: PayuProvider,       // ✅ ADD PAYU
   },
 };

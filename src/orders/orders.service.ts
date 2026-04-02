@@ -22,18 +22,30 @@ export class OrdersService {
   ) {}
 
   async createOrder(userId: string, storeId: string) {
-    // 1. Validation: Prevent P2003 error by checking store existence
-    const store = await this.prisma.store.findUnique({
+    // 1. Find the real store for the database relation
+    let store = await this.prisma.store.findUnique({
       where: { id: storeId },
     });
 
-    if (!store) {
-      this.logger.error(`FAILED: Store ID ${storeId} does not exist.`);
-      throw new NotFoundException(`Store with ID ${storeId} not found.`);
+    // CRITICAL FIX: If frontend passed 'default-store', find the actual default store in the DB
+    if (!store && storeId === 'default-store') {
+      store = await this.prisma.store.findFirst({ where: { isDefault: true } });
+      
+      // Fallback: Just grab the first available store if none are marked default
+      if (!store) {
+        store = await this.prisma.store.findFirst();
+      }
     }
 
+    if (!store) {
+      this.logger.error(`FAILED: No valid store found to place order.`);
+      throw new NotFoundException(`Valid store not found.`);
+    }
+
+    const realStoreId = store.id; // Use this valid ID for the Order foreign key
+
     // 2. Fetch current cart
-    // FIX: Using storeId as the tenantId and ensuring the unique constraint matches your schema
+    // Use the original `storeId` ('default-store') to find the cart, as that's how it was saved
     const cart = await this.prisma.cart.findUnique({
       where: userId
         ? { tenantId_userId: { tenantId: storeId, userId } }
@@ -53,34 +65,31 @@ export class OrdersService {
     // 4. Atomic Database Transaction
     try {
       const order = await this.prisma.$transaction(async (tx) => {
-        // Create the Order and OrderItems
         const newOrder = await tx.order.create({
           data: {
             userId, 
-            storeId,
+            storeId: realStoreId, // ✅ Use the REAL database store ID here
             totalAmount,
             status: 'PENDING',
             items: {
               create: cart.items.map((item) => ({
                 productId: item.productId,
                 quantity: item.quantity,
-                // FIX: Use priceSnapshot to match CartItem schema
                 price: item.priceSnapshot, 
               })),
             },
           },
         });
 
-        // Clear the cart items in DB using the transaction client
-        await tx.cartItem.deleteMany({
-          where: { cartId: cart.id }, // FIX: cart.id exists, cartId didn't
-        });
+        // ❌ DO NOT delete the cart here. The cart should only be cleared in 
+        // PaymentsService -> markOrderPaid after the user actually pays successfully.
 
         return newOrder;
       });
 
-      // 5. Cleanup: Invalidate Redis Cache (Ensure this method exists in CartService)
-      await this.cartService.invalidateCache(userId);
+      // 5. Cleanup: Invalidate Redis Cache 
+      // ✅ FIX: pass the tenantId (storeId) first, then the userId
+      await this.cartService.invalidateCache(storeId, userId);
 
       // 6. Async Notification
       this.sendOrderNotificationsAsync(userId, order).catch((err) =>
