@@ -38,12 +38,19 @@ import { CheckoutModule } from './checkout/checkout.module';
 import { AdminFeaturesController } from './admin/features/features.controller';
 import { AdminFeaturesService } from './admin/features/features.service'; // <-- ADDED THIS IMPORT
 import { FeaturesModule } from './features/features.module';
+import { BullModule } from '@nestjs/bullmq';
 @Module({
   imports: [
     // 1. Configuration (Loaded first to ensure variables are available for other modules)
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    BullModule.forRoot({
+  connection: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+  },
+}),
 
     // 2. Health Check Monitoring
     TerminusModule,

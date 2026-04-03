@@ -1,10 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
+  const logger = new Logger('CORS');
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.useGlobalPipes(
@@ -18,13 +19,18 @@ async function bootstrap() {
   app.use(cookieParser());
   app.setGlobalPrefix('api/v1');
 
-  const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [];
 
+  const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [];
+  
   app.enableCors({
     origin: (origin, callback) => {
-      // 1. Handle server-to-server webhooks (undefined) 
-      // 2. Handle browser POST redirects (string 'null')
+      // 1. Logs the incoming origin for every cross-origin request
+      // Note: This will be 'undefined' for direct browser navigation or server-to-server calls
+      const originDisplay = origin || 'Direct/Server Request (Undefined)';
+
+      // 2. Handle specific bypass cases
       if (!origin || origin === 'null') {
+        logger.debug(`✅ Allowed Bypass: ${originDisplay}`);
         return callback(null, true);
       }
 
@@ -32,10 +38,11 @@ async function bootstrap() {
         return callback(null, true);
       }
 
-      console.error(`❌ Blocked by CORS: ${origin}`);
+      // 3. Reject and Log unauthorized attempts
+      logger.error(`❌ Access Denied: ${origin}`);
       return callback(new Error(`Not allowed by CORS: ${origin}`));
     },
-    credentials: true, // Keep this if other routes need cookies, but webhooks won't use it
+    credentials: true,
   });
 
   const config = new DocumentBuilder()
@@ -49,6 +56,6 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/v1/docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3001);
+  await app.listen(process.env.PORT ?? 4000);
 }
 bootstrap();

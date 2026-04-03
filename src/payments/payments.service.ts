@@ -1,8 +1,9 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProviderFactory } from '../providers/provider.factory';
 import { ProviderConfigService } from '../providers/provider-config.service';
-import { NotificationService } from '../notifications/notification.service';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 
 export type PaymentGateway = 'STRIPE' | 'RAZORPAY' | 'PHONEPE' | 'PAYU';
 
@@ -14,7 +15,7 @@ export class PaymentsService {
     private prisma: PrismaService,
     private providerFactory: ProviderFactory,
     private configService: ProviderConfigService,
-    private notificationService: NotificationService,
+    @InjectQueue('post-payment-queue') private postPaymentQueue: Queue,
   ) {}
 
   async initiateCheckout(
@@ -32,6 +33,7 @@ export class PaymentsService {
     // 1. Fetch active global config from DB/Cache dynamically
     const activeConfigs = await this.configService.getActiveConfigs('PAYMENT');
     const globalConfig = activeConfigs.find((c) => c.provider === provider);
+    
     
     if (!globalConfig || !globalConfig.config) {
       throw new BadRequestException(`Payment provider ${provider} is not active or missing configuration.`);
@@ -129,38 +131,90 @@ export class PaymentsService {
   }
 
   // ✅ HANDLES SUCCESS WORKFLOW (Status, Cart cleanup, Email/SMS)
+ // ✅ FULLY PRODUCTION-GRADE SUCCESS WORKFLOW
   async markOrderPaid(paymentId: string) {
-    console.log(`marking order paid for payment id ${paymentId}`)
-    const order = await this.prisma.order.update({
+    this.logger.log(`[Payment Workflow] Received success signal for Payment ID: ${paymentId}`);
+
+    // 1. Fetch current state to prevent duplicate processing
+    const existingOrder = await this.prisma.order.findUnique({
       where: { paymentProviderId: paymentId },
-      data: { status: 'PAID' },
-      include: { user: true },
     });
 
-    // 1. Safely clear the user's cart now that they have purchased
-    await this.prisma.cartItem.deleteMany({
-      where: { cart: { userId: order.userId } },
+    if (!existingOrder) {
+      this.logger.error(`[Payment Workflow] Order not found for payment ID: ${paymentId}`);
+      throw new BadRequestException('Order not found');
+    }
+
+    // 2. IDEMPOTENCY CHECK (CRITICAL)
+    if (existingOrder.status === 'PAID') {
+      this.logger.log(`[Idempotency] Order ${existingOrder.id} is already PAID. Ignoring duplicate webhook.`);
+      return existingOrder; // Return safely without doing anything
+    }
+
+    try {
+      // 3. OPTIMISTIC LOCKING: Update ONLY if the status is PENDING
+      const order = await this.prisma.order.update({
+        where: { id: existingOrder.id, status: 'PENDING' },
+        data: { status: 'PAID' },
+        include: { user: true },
+      });
+
+      this.logger.log(`[Payment Workflow] Order ${order.id} strictly marked as PAID. Dispatching background jobs.`);
+
+      // 4. OFFLOAD HEAVY TASKS TO BACKGROUND WORKER
+      // We DO NOT delete carts or send emails here to avoid webhook timeouts.
+      await this.postPaymentQueue.add(
+        'process-success',
+        {
+          orderId: order.id,
+          userId: order.userId,
+          userEmail: order.user?.email,
+          userPhone: order.user?.phone,
+          userName: order.user?.name,
+          totalAmount: order.totalAmount,
+        },
+        {
+          attempts: 5, // Retry up to 5 times if SES/Msg91 fails
+          backoff: { type: 'exponential', delay: 2000 },
+          removeOnComplete: true, // Keep Redis clean
+        }
+      );
+
+      return order;
+    } catch (error) {
+      // If Prisma throws here, it means another thread just updated this order to PAID concurrently
+      this.logger.warn(`[Idempotency] Concurrent update collision handled for Order: ${existingOrder.id}`);
+      return existingOrder;
+    }
+  }
+
+  // ✅ NEW: High-performance polling verification
+  async verifyPaymentStatusForFrontend(orderId: string, userId: string) {
+    // We only select what we need to make polling extremely fast and cheap for the DB
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { status: true, userId: true },
     });
 
-    // 2. Fire Success Email & SMS Notifications in the background
-    if (order.user) {
-      this.notificationService
-        .sendOrderConfirmation(
-          {
-            email: order.user.email || '',
-            phone: order.user.phone || '',
-            name: order.user.name || 'Customer',
-          },
-          {
-            id: order.id,
-            amount: order.totalAmount,
-          },
-        )
-        .catch((err) =>
-          this.logger.error(`Failed to send success notification: ${err.message}`),
-        );
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    // 🔒 Security check
+    if (order.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    // Translate backend Order states to the specific UI Payment states
+    if (['PAID', 'PROCESSING', 'SHIPPED', 'DELIVERED'].includes(order.status)) {
+      return { status: 'SUCCESS' };
     }
     
-    return order;
+    if (['FAILED', 'CANCELLED', 'PAYMENT_FAILED'].includes(order.status)) {
+      return { status: 'FAILED' };
+    }
+
+    // If it's PENDING, return PENDING so UI keeps polling
+    return { status: 'PENDING' };
   }
 }
