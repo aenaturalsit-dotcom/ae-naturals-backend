@@ -11,8 +11,8 @@ export class PayuProvider implements PaymentProviderInterface {
       throw new Error('PayU configuration is incomplete: Missing Key or Salt.');
     }
     // ✅ ADD THIS CHECK to fail early instead of breaking the redirect
-    if (!config.frontend_url) {
-      throw new Error('PayU configuration is incomplete: Missing frontend_url.');
+    if (!config.backend_webhook_url) {
+      throw new Error('PayU configuration is incomplete: Missing backend_webhook_url.');
     }
     this.config = config;
   }
@@ -39,6 +39,8 @@ export class PayuProvider implements PaymentProviderInterface {
       ? 'https://secure.payu.in/_payment'
       : 'https://test.payu.in/_payment';
 
+
+      const backendUrl = this.config.backend_webhook_url || process.env.BACKEND_URL || 'http://localhost:4000/api/v1';
     return {
       providerOrderId: txnid,
       provider: 'PAYU',
@@ -55,8 +57,8 @@ export class PayuProvider implements PaymentProviderInterface {
         udf3: '',
         udf4: '',
         udf5: '',
-        surl: `${this.config.frontend_url}/api/payu/callback`,
-        furl: `${this.config.frontend_url}/api/payu/callback`,
+        surl: `${this.config.backend_webhook_url}/payments/payu/verify`,
+        furl: `${this.config.backend_webhook_url}/payments/payu/verify`,
         hash,
         actionUrl
       }

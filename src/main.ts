@@ -7,28 +7,37 @@ import cookieParser from 'cookie-parser';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
-  // Add the Global Validation Pipe
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Strips away properties that do not have any decorators in the DTO
-      transform: true, // Automatically transforms payloads to be objects typed according to their DTO classes
-      forbidNonWhitelisted: true, // Throws an error if non-whitelisted properties are provided
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
     }),
   );
+  
   app.use(cookieParser());
-  app.setGlobalPrefix('api/v1'); // Add this line
-  const origins = process.env.CORS_ORIGINS?.split(',');
+  app.setGlobalPrefix('api/v1');
+
+  const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [];
 
   app.enableCors({
     origin: (origin, callback) => {
-      if (!origin || origins?.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
+      // 1. Handle server-to-server webhooks (undefined) 
+      // 2. Handle browser POST redirects (string 'null')
+      if (!origin || origin === 'null') {
+        return callback(null, true);
       }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      console.error(`❌ Blocked by CORS: ${origin}`);
+      return callback(new Error(`Not allowed by CORS: ${origin}`));
     },
-    credentials: true,
+    credentials: true, // Keep this if other routes need cookies, but webhooks won't use it
   });
+
   const config = new DocumentBuilder()
     .setTitle('Multi-Tenant E-Commerce API')
     .setDescription('Production API for Flowers, Cakes, and Apparel stores')

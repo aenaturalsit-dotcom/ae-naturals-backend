@@ -28,6 +28,35 @@ async checkout(
   return this.paymentsService.initiateCheckout(body.orderId, body.provider, userId);
 }
 
+// ✅ NEW: PayU Direct Backend Callback & Redirect
+  @Post('payu/verify')
+  async payuVerify(@Body() body: any, @Res() res: Response) {
+    // We set a safe fallback URL in case verification fails so the user isn't stuck on a blank screen
+    const fallbackFrontendUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3001';
+
+    try {
+      const txnid = body.txnid;
+      const status = body.status;
+
+      // 1. If PayU explicitly tells us the payment failed (e.g., user cancelled)
+      if (status !== 'success') {
+        return res.redirect(`${fallbackFrontendUrl}/checkout?error=payment_failed`);
+      }
+
+      // 2. Pass to PaymentsService to verify reverse hash and mark order PAID
+      const result = await this.paymentsService.verifyPayment('PAYU', txnid, body);
+
+      // 3. Issue HTTP 302 Redirect to drop user on the Next.js Success Page
+      if (result.success) {
+        return res.redirect(`${result.frontendUrl}/order-success/${result.orderId}`);
+      }
+      
+    } catch (error) {
+      console.error('PayU Verification Error:', error.message);
+      return res.redirect(`${fallbackFrontendUrl}/checkout?error=hash_mismatch`);
+    }
+  }
+
   // 2. Stripe Webhook
  @Post('stripe/webhook')
   async stripeWebhook(
